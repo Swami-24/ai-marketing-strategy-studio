@@ -5,32 +5,109 @@ st.set_page_config(page_title="AI Marketing Strategy Studio", page_icon="🎯", 
 
 st.markdown("""
 <style>
-:root { --ink:#eef2ff; --muted:#a8b3cc; --panel:#111a2e; --line:#273653; --accent:#8b5cf6; }
-.stApp { background: radial-gradient(ellipse at 15% 0%, #1d2450 0%, #0b1020 43%, #080d19 100%); color:var(--ink); }
-.block-container { max-width:1240px; padding-top:1.8rem; padding-bottom:3rem; }
-#MainMenu, footer { visibility:hidden; }
-.hero { position:relative; overflow:hidden; padding:2rem 2.1rem; border-radius:22px; background:linear-gradient(115deg,rgba(91,52,173,.42),rgba(25,49,92,.72)); border:1px solid rgba(167,139,250,.3); margin-bottom:1.25rem; box-shadow:0 18px 55px rgba(0,0,0,.18); }
-.hero:after { content:'✦'; position:absolute; right:6%; top:4%; font-size:5rem; color:rgba(221,214,254,.12); }
-.eyebrow { color:#c4b5fd; font-size:.76rem; font-weight:700; letter-spacing:.16em; text-transform:uppercase; margin-bottom:.55rem; }
-.hero h1 { margin:0; color:#fff; font-size:2.25rem; letter-spacing:-.04em; }
-.hero p { color:#dbe4ff; margin:.65rem 0 0; font-size:1rem; max-width:760px; }
-.section-title { font-size:1.08rem; font-weight:700; color:#f1f5ff; margin:.7rem 0 .2rem; }
-.section-subtitle { color:var(--muted); font-size:.88rem; margin-bottom:1rem; }
-div[data-testid="stMetric"] { background:linear-gradient(145deg,rgba(20,31,54,.96),rgba(15,23,42,.96)); border:1px solid var(--line); padding:1.05rem 1.15rem; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.12); }
-div[data-testid="stMetricLabel"] { color:#aebbd5; }
-div[data-testid="stMetricValue"] { color:#f5f3ff; }
-section[data-testid="stSidebar"] { background:#0c1425; border-right:1px solid #24324b; }
-section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3 { color:#f5f3ff; }
-.stButton button[kind="primary"] { border:0; border-radius:11px; background:linear-gradient(100deg,#7c3aed,#6366f1); font-weight:700; min-height:2.8rem; box-shadow:0 8px 22px rgba(99,102,241,.2); }
-.stButton button[kind="primary"]:hover { border:0; background:linear-gradient(100deg,#6d28d9,#4f46e5); }
-.stTextInput input, .stNumberInput input, .stTextArea textarea, div[data-baseweb="select"] > div { border-radius:10px; }
-.stTabs [data-baseweb="tab-list"] { gap:8px; }
-.stTabs [data-baseweb="tab"] { background:#111a2e; border:1px solid #273653; border-radius:10px 10px 0 0; padding: .65rem 1rem; }
-.workflow-card { background:rgba(17,26,46,.88); border:1px solid #273653; border-radius:16px; padding:1.15rem; height:100%; }
-.workflow-number { display:inline-flex; width:32px; height:32px; align-items:center; justify-content:center; border-radius:10px; background:#30215d; color:#ddd6fe; font-weight:800; margin-bottom:.7rem; }
-.workflow-card h4 { margin:.1rem 0 .45rem; color:#f5f3ff; font-size:1rem; }
-.workflow-card p { color:#aebbd5; font-size:.88rem; margin:0; line-height:1.5; }
-div[data-testid="stAlert"] { border-radius:12px; }
+:root {
+  --ink: #f4f6ff;
+  --muted: #b8c3da;
+  --panel: #111a2e;
+  --line: #2b3a59;
+  --accent: #8b5cf6;
+}
+.stApp {
+  background: radial-gradient(ellipse at 15% 0%, #202754 0%, #0b1020 45%, #080d19 100%);
+  color: var(--ink);
+}
+.block-container { max-width: 1240px; padding-top: 1.6rem; padding-bottom: 3rem; }
+#MainMenu, footer { visibility: hidden; }
+/* Keep Streamlit's top toolbar consistent with the dark application */
+header[data-testid="stHeader"] { background: rgba(8, 13, 25, .96); }
+header[data-testid="stHeader"] button { color: #e8edff !important; }
+[data-testid="stToolbar"] { background: transparent; }
+/* Global text contrast */
+.stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span,
+[data-testid="stCaptionContainer"], [data-testid="stWidgetLabel"] p,
+label, .stText, .stRadio label, .stCheckbox label {
+  color: var(--ink);
+}
+.stCaption, [data-testid="stCaptionContainer"] p { color: var(--muted) !important; }
+.hero {
+  position: relative; overflow: hidden; padding: 2rem 2.1rem;
+  border-radius: 22px;
+  background: linear-gradient(115deg, rgba(91,52,173,.42), rgba(25,49,92,.72));
+  border: 1px solid rgba(167,139,250,.32); margin-bottom: 1.25rem;
+  box-shadow: 0 18px 55px rgba(0,0,0,.2);
+}
+.hero:after { content: '✦'; position: absolute; right: 6%; top: 4%; font-size: 5rem; color: rgba(221,214,254,.12); }
+.eyebrow { color: #d0c5ff; font-size: .76rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; margin-bottom: .55rem; }
+.hero h1 { margin: 0; color: #fff; font-size: 2.25rem; letter-spacing: -.04em; }
+.hero p { color: #e0e7ff; margin: .65rem 0 0; font-size: 1rem; max-width: 760px; line-height: 1.65; }
+.section-title { font-size: 1.08rem; font-weight: 750; color: #f1f5ff; margin: .7rem 0 .2rem; }
+.section-subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
+/* Metric cards */
+div[data-testid="stMetric"] {
+  background: linear-gradient(145deg, rgba(20,31,54,.98), rgba(15,23,42,.98));
+  border: 1px solid var(--line); padding: 1.05rem 1.15rem;
+  border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
+}
+div[data-testid="stMetricLabel"] p { color: #bdc9e1 !important; }
+div[data-testid="stMetricValue"] { color: #f5f3ff !important; }
+div[data-testid="stMetricDelta"] { color: #b8f7d0 !important; }
+/* Sidebar and form controls */
+section[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, #0e172b 0%, #0a1222 100%);
+  border-right: 1px solid #263653;
+}
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 { color: #f5f7ff !important; }
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p { color: #b7c3da !important; }
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+  color: #dce5f8 !important; font-weight: 600;
+}
+.stTextInput input, .stNumberInput input, .stTextArea textarea,
+div[data-baseweb="select"] > div {
+  background: #121d32 !important; color: #f4f6ff !important;
+  border: 1px solid #344563 !important; border-radius: 10px !important;
+}
+.stTextInput input::placeholder, .stTextArea textarea::placeholder { color: #8796b2 !important; }
+div[data-baseweb="select"] svg { fill: #dce5f8 !important; }
+div[data-baseweb="popover"], ul[role="listbox"] {
+  background: #121d32 !important; border: 1px solid #344563 !important;
+}
+li[role="option"] { color: #f4f6ff !important; }
+li[role="option"]:hover { background: #263653 !important; }
+.stButton button[kind="primary"] {
+  border: 1px solid rgba(196,181,253,.25); border-radius: 11px;
+  background: linear-gradient(100deg, #7c3aed, #6366f1);
+  color: #fff; font-weight: 750; min-height: 2.8rem;
+  box-shadow: 0 8px 22px rgba(99,102,241,.22); transition: .18s ease;
+}
+.stButton button[kind="primary"]:hover {
+  border-color: #c4b5fd; background: linear-gradient(100deg, #6d28d9, #4f46e5);
+  transform: translateY(-1px);
+}
+.stDownloadButton button { border-radius: 10px; border: 1px solid #6750a4; color: #f4f0ff; background: #211a3b; }
+.stTabs [data-baseweb="tab-list"] { gap: 8px; border-bottom: 1px solid #2b3a59; }
+.stTabs [data-baseweb="tab"] {
+  background: #111a2e; color: #cbd5e1; border: 1px solid #273653;
+  border-radius: 10px 10px 0 0; padding: .65rem 1rem;
+}
+.stTabs [aria-selected="true"] { background: #28204a !important; color: #fff !important; border-color: #8063d8 !important; }
+.workflow-card {
+  background: linear-gradient(145deg, rgba(17,26,46,.96), rgba(13,21,38,.96));
+  border: 1px solid #2b3a59; border-radius: 16px; padding: 1.15rem; height: 100%;
+  box-shadow: 0 10px 28px rgba(0,0,0,.1);
+}
+.workflow-number { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 10px; background: #352567; color: #e6ddff; font-weight: 800; margin-bottom: .7rem; }
+.workflow-card h4 { margin: .1rem 0 .45rem; color: #f5f3ff; font-size: 1rem; }
+.workflow-card p { color: #b8c5dd; font-size: .9rem; margin: 0; line-height: 1.6; }
+div[data-testid="stAlert"] { border-radius: 12px; }
+hr { border-color: #293752 !important; }
+@media (max-width: 700px) {
+  .block-container { padding-left: 1rem; padding-right: 1rem; }
+  .hero { padding: 1.4rem; }
+  .hero h1 { font-size: 1.7rem; }
+}
 </style>
 """, unsafe_allow_html=True)
 
