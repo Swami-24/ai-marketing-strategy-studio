@@ -1,5 +1,25 @@
 import streamlit as st
 from google import genai
+import time
+
+
+def generate_with_retry(client, model, prompt, max_attempts=3):
+    """Retry temporary Gemini overload/rate-limit errors with backoff."""
+    last_error = None
+    for attempt in range(max_attempts):
+        try:
+            return client.models.generate_content(model=model, contents=prompt)
+        except Exception as exc:
+            last_error = exc
+            error_text = str(exc).upper()
+            temporary = any(code in error_text for code in (
+                "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED",
+                "500", "INTERNAL", "502", "504", "DEADLINE_EXCEEDED"
+            ))
+            if not temporary or attempt == max_attempts - 1:
+                raise
+            time.sleep(2 ** (attempt + 1))
+    raise last_error
 
 st.set_page_config(page_title="AI Marketing Strategy Studio", page_icon="🎯", layout="wide")
 
@@ -162,10 +182,12 @@ minors, consider child privacy and avoid manipulative pressure; distinguish chil
 
     with st.spinner("Agent 1 — developing the marketing strategy…"):
         try:
-            response1 = client.models.generate_content(model=model, contents=strategy_prompt)
+            response1 = generate_with_retry(client, model, strategy_prompt)
             strategy = response1.text or "No strategy was returned. Please try again."
         except Exception as exc:
-            st.error(f"Strategy generation failed: {exc}")
+            st.error(f"Strategy generation failed after automatic retries: {exc}")
+            if "503" in str(exc) or "UNAVAILABLE" in str(exc).upper():
+                st.info("Gemini is temporarily overloaded. Wait a minute and try again. Your campaign details are not lost.")
             st.stop()
 
     content_prompt = f"""You are Agent 2, the Content Creator. You MUST use the strategy from Agent 1 below.
@@ -185,10 +207,12 @@ STRATEGY FROM AGENT 1:
 """
     with st.spinner("Agent 2 — creating content based on the strategy…"):
         try:
-            response2 = client.models.generate_content(model=model, contents=content_prompt)
+            response2 = generate_with_retry(client, model, content_prompt)
             content = response2.text or "No content was returned. Please try again."
         except Exception as exc:
-            st.error(f"Content generation failed: {exc}")
+            st.error(f"Content generation failed after automatic retries: {exc}")
+            if "503" in str(exc) or "UNAVAILABLE" in str(exc).upper():
+                st.info("Gemini is temporarily overloaded. Wait a minute and try again.")
             st.stop()
 
     st.success("Campaign generated.")
