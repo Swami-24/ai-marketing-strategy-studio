@@ -29,21 +29,17 @@ st.markdown("""
     );
     color: #f4f6ff;
 }
-
 .block-container {
     max-width: 1250px;
     padding-top: 1.5rem;
     padding-bottom: 3rem;
 }
-
 header[data-testid="stHeader"] {
     background: rgba(8, 13, 25, 0.95);
 }
-
 #MainMenu, footer {
     visibility: hidden;
 }
-
 .hero {
     padding: 30px;
     border-radius: 22px;
@@ -56,7 +52,6 @@ header[data-testid="stHeader"] {
     border: 1px solid rgba(167, 139, 250, 0.35);
     box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
 }
-
 .hero-label {
     color: #c4b5fd;
     font-size: 12px;
@@ -64,24 +59,20 @@ header[data-testid="stHeader"] {
     letter-spacing: 2px;
     text-transform: uppercase;
 }
-
 .hero h1 {
     color: #ffffff;
     font-size: 36px;
     margin: 10px 0;
 }
-
 .hero p {
     color: #e0e7ff;
     font-size: 16px;
     line-height: 1.7;
 }
-
 section[data-testid="stSidebar"] {
     background: #0e172b;
     border-right: 1px solid #293752;
 }
-
 section[data-testid="stSidebar"] h1,
 section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3,
@@ -89,7 +80,6 @@ section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p {
     color: #edf2ff !important;
 }
-
 .stMarkdown p,
 .stMarkdown li,
 .stMarkdown h1,
@@ -98,11 +88,9 @@ section[data-testid="stSidebar"] p {
 .stMarkdown h4 {
     color: #edf2ff;
 }
-
 [data-testid="stCaptionContainer"] p {
     color: #b8c5dd !important;
 }
-
 .stTextInput input,
 .stTextArea textarea,
 .stNumberInput input,
@@ -112,12 +100,10 @@ div[data-baseweb="select"] > div {
     border: 1px solid #344563 !important;
     border-radius: 10px !important;
 }
-
 .stTextInput input::placeholder,
 .stTextArea textarea::placeholder {
     color: #8796b2 !important;
 }
-
 .stButton button[kind="primary"],
 .stFormSubmitButton button[kind="primary"] {
     background: linear-gradient(100deg, #7c3aed, #6366f1);
@@ -127,50 +113,41 @@ div[data-baseweb="select"] > div {
     font-weight: 700;
     min-height: 44px;
 }
-
 .stButton button[kind="primary"]:hover,
 .stFormSubmitButton button[kind="primary"]:hover {
     background: linear-gradient(100deg, #6d28d9, #4f46e5);
     border-color: #c4b5fd;
 }
-
 .stDownloadButton button {
     background: #211a3b;
     color: #f4f0ff;
     border: 1px solid #6750a4;
     border-radius: 10px;
 }
-
 div[data-testid="stMetric"] {
     background: #111a2e;
     border: 1px solid #2b3a59;
     padding: 16px;
     border-radius: 15px;
 }
-
 div[data-testid="stMetricLabel"] p {
     color: #bdc9e1 !important;
 }
-
 div[data-testid="stMetricValue"] {
     color: #ffffff !important;
 }
-
 .stTabs [data-baseweb="tab-list"] {
     gap: 8px;
 }
-
 .stTabs [data-baseweb="tab"] {
     background: #111a2e;
     color: #e2e8f0;
     border-radius: 8px;
 }
-
 .stTabs [aria-selected="true"] {
     background: #352567 !important;
     color: #ffffff !important;
 }
-
 .workflow-card {
     background: #111a2e;
     border: 1px solid #2b3a59;
@@ -178,50 +155,35 @@ div[data-testid="stMetricValue"] {
     padding: 20px;
     min-height: 165px;
 }
-
 .workflow-card h4 {
     color: #f5f3ff;
 }
-
 .workflow-card p {
     color: #b8c5dd;
     font-size: 14px;
     line-height: 1.6;
 }
-
 .workflow-number {
     color: #d8ccff;
     font-weight: 800;
     font-size: 20px;
 }
-
 hr {
     border-color: #293752 !important;
 }
-
 @media (max-width: 700px) {
-    .hero h1 {
-        font-size: 27px;
-    }
-
-    .hero {
-        padding: 20px;
-    }
+    .hero h1 { font-size: 27px; }
+    .hero { padding: 20px; }
 }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ==================================================
-# GEMINI CONFIGURATION
+# SETTINGS
 # ==================================================
 MAX_ATTEMPTS = 2
 REQUEST_TIMEOUT_MS = 60000
-
-# Optional: set GEMINI_MODEL in Streamlit Secrets
-# to a model name confirmed by the model diagnostic.
-# Otherwise, the app discovers compatible models.
-PREFERRED_MODEL = st.secrets.get("GEMINI_MODEL", "")
 
 
 # ==================================================
@@ -259,66 +221,51 @@ def get_gemini_client(api_key):
 # ==================================================
 def discover_models(client):
     """
-    Find models that advertise generateContent.
-    Prefer Flash models, but do not invent model IDs.
+    Get model IDs from the API itself.
+    Use only models advertising generateContent support.
     """
-    models = []
+    available = []
 
-    try:
-        for item in client.models.list():
-            name = getattr(item, "name", "") or ""
-            actions = (
-                getattr(item, "supported_actions", None) or []
-            )
+    for item in client.models.list():
+        name = getattr(item, "name", "") or ""
+        actions = getattr(item, "supported_actions", []) or []
 
-            if (
-                name
-                and "generateContent" in actions
-                and "embedding" not in name.lower()
-            ):
-                # API model names can be returned as models/...
-                model_id = name.removeprefix("models/")
-                models.append(model_id)
+        if name and "generateContent" in actions:
+            model_id = name.removeprefix("models/")
+            available.append(model_id)
 
-    except Exception as exc:
-        st.warning(
-            "Could not list available models. "
-            "Check the API key and Google API availability. "
-            f"Details: {exc}"
-        )
-
-    # Prefer Flash models to keep requests relatively lightweight.
-    models.sort(
+    # Prefer Flash models, without inventing model names.
+    available.sort(
         key=lambda name: (
             "flash" not in name.lower(),
             name.lower()
         )
     )
 
-    if PREFERRED_MODEL:
-        preferred = PREFERRED_MODEL.removeprefix("models/")
-        if preferred in models:
-            models.remove(preferred)
-        models.insert(0, preferred)
+    preferred = st.secrets.get("GEMINI_MODEL", "").strip()
+    preferred = preferred.removeprefix("models/")
 
-    return models
+    if preferred and preferred in available:
+        available.remove(preferred)
+        available.insert(0, preferred)
+
+    return available
 
 
 # ==================================================
-# ERROR CLASSIFICATION
+# ERROR HANDLING
 # ==================================================
 def classify_error(exc):
     message = str(exc)
     upper = message.upper()
 
     if any(x in upper for x in [
-        "429", "RESOURCE_EXHAUSTED", "QUOTA",
-        "RATE LIMIT"
+        "429", "RESOURCE_EXHAUSTED", "QUOTA", "RATE LIMIT"
     ]):
         return (
             "quota",
-            "Gemini Free Tier quota or rate limit reached. "
-            "Check your API usage and retry after the reset."
+            "Gemini Free Tier quota/rate limit reached. "
+            "Check API usage and retry after the limit resets."
         )
 
     if any(x in upper for x in [
@@ -326,18 +273,15 @@ def classify_error(exc):
     ]):
         return (
             "overloaded",
-            "Gemini is temporarily overloaded. "
-            "Wait a little and try again."
+            "Gemini is temporarily overloaded. Wait and retry."
         )
 
     if any(x in upper for x in [
-        "504", "DEADLINE_EXCEEDED", "TIMED OUT",
-        "TIMEOUT"
+        "504", "DEADLINE_EXCEEDED", "TIMEOUT", "TIMED OUT"
     ]):
         return (
             "timeout",
-            "Gemini took too long to respond. "
-            "Try again later or use a shorter prompt."
+            "Gemini took too long. Try again later or shorten the prompt."
         )
 
     if any(x in upper for x in [
@@ -345,31 +289,24 @@ def classify_error(exc):
     ]):
         return (
             "model",
-            "The selected model is unavailable. "
-            "Check the exact model name for your API key."
+            "The model was not found or is unavailable to this API key."
         )
 
     if any(x in upper for x in [
-        "401", "403", "PERMISSION_DENIED",
-        "UNAUTHENTICATED", "API KEY"
+        "401", "403", "PERMISSION_DENIED", "UNAUTHENTICATED"
     ]):
         return (
             "auth",
-            "Check GEMINI_API_KEY in Streamlit Cloud Secrets "
-            "and confirm that the key is valid."
+            "Check GEMINI_API_KEY in Streamlit Cloud Secrets."
         )
 
     return "other", message
 
 
 # ==================================================
-# GENERATE CONTENT WITH LIMITED RETRY
+# GENERATE WITH LIMITED RETRY
 # ==================================================
 def generate_with_retry(client, prompt, model):
-    """
-    Retry temporary failures only.
-    Do not repeatedly retry quota or authentication errors.
-    """
     last_exception = None
 
     for attempt in range(MAX_ATTEMPTS):
@@ -384,9 +321,7 @@ def generate_with_retry(client, prompt, model):
             )
 
             if not response.text:
-                raise RuntimeError(
-                    "Gemini returned an empty response."
-                )
+                raise RuntimeError("Gemini returned an empty response.")
 
             return response.text
 
@@ -394,19 +329,16 @@ def generate_with_retry(client, prompt, model):
             last_exception = exc
             category, _ = classify_error(exc)
 
-            retryable = category in {
-                "overloaded", "timeout"
-            }
-
-            if not retryable or attempt == MAX_ATTEMPTS - 1:
+            # Retry temporary overload/timeouts only.
+            if (
+                category not in {"overloaded", "timeout"}
+                or attempt == MAX_ATTEMPTS - 1
+            ):
                 raise
 
-            # Short backoff: one retry only.
             time.sleep(3 * (attempt + 1))
 
-    raise RuntimeError(
-        "Generation failed."
-    ) from last_exception
+    raise RuntimeError("Generation failed.") from last_exception
 
 
 # ==================================================
@@ -440,9 +372,7 @@ def build_report(details, strategy, content):
 # ==================================================
 st.markdown("""
 <div class="hero">
-    <div class="hero-label">
-        Agentic AI | Campaign workspace
-    </div>
+    <div class="hero-label">Agentic AI | Campaign workspace</div>
     <h1>AI Marketing Strategy Studio</h1>
     <p>
         Transform your product idea into a marketing strategy
@@ -454,7 +384,7 @@ st.markdown("""
 
 
 # ==================================================
-# SIDEBAR INPUTS
+# SIDEBAR
 # ==================================================
 with st.sidebar:
     st.markdown("## Campaign Setup")
@@ -526,12 +456,10 @@ with st.sidebar:
 # ==================================================
 if generate_button:
     if not product.strip() or not audience.strip():
-        st.error(
-            "Please enter the product and target audience."
-        )
+        st.error("Please enter the product and target audience.")
 
     else:
-        api_key = st.secrets.get("GEMINI_API_KEY", "")
+        api_key = st.secrets.get("GEMINI_API_KEY", "").strip()
 
         if not api_key:
             st.error(
@@ -540,8 +468,6 @@ if generate_button:
             )
 
         else:
-            # Save campaign details so the report and retry
-            # buttons can use the same inputs.
             details = {
                 "product": product.strip(),
                 "audience": audience.strip(),
@@ -557,32 +483,30 @@ if generate_button:
             st.session_state.content = ""
             st.session_state.campaign_report = ""
             st.session_state.last_error = ""
+            st.session_state.active_model = ""
 
             try:
                 client = get_gemini_client(api_key)
 
-                with st.spinner(
-                    "Checking available Gemini models..."
-                ):
+                with st.spinner("Checking available Gemini models..."):
                     available_models = discover_models(client)
 
                 if not available_models:
                     st.error(
-                        "No compatible model was found. "
-                        "Check the model list in Google AI Studio "
-                        "and verify that your API key has access."
+                        "No models supporting generateContent were found. "
+                        "Check your API key and available models in "
+                        "Google AI Studio."
                     )
                     st.stop()
 
-                # Try available models in order. If a model
-                # returns 503/504, do not cycle through many
-                # models and exhaust the Free Tier quota.
+                # The list comes from this API key.
+                # Use the first listed model, preferring Flash.
                 model = available_models[0]
                 st.session_state.active_model = model
                 details["model"] = model
 
                 # ------------------------------------------
-                # AGENT 1: MARKETING STRATEGIST
+                # AGENT 1
                 # ------------------------------------------
                 strategy_prompt = f"""
 You are Agent 1, a marketing strategist.
@@ -605,22 +529,19 @@ Include:
 5. Five measurable KPIs.
 6. Three risks and practical solutions.
 
-Use clear headings and Markdown tables.
-Keep the response concise, under 500 words.
-Do not guarantee campaign results.
-Do not invent product features.
-If children are in the audience, consider child privacy
-and use age-appropriate, non-manipulative marketing.
+Use headings and Markdown tables.
+Keep the response under 500 words.
+Do not guarantee results or invent product features.
+Use age-appropriate, non-manipulative marketing
+and respect child privacy.
 """
 
                 try:
                     with st.spinner(
-                        "Agent 1 is developing the marketing strategy..."
+                        f"Agent 1 is developing the strategy using {model}..."
                     ):
                         strategy = generate_with_retry(
-                            client,
-                            strategy_prompt,
-                            model,
+                            client, strategy_prompt, model
                         )
 
                     st.session_state.strategy = strategy
@@ -629,21 +550,19 @@ and use age-appropriate, non-manipulative marketing.
                     category, friendly_message = classify_error(exc)
                     st.session_state.last_error = str(exc)
 
-                    st.error(
-                        f"Agent 1 failed: {friendly_message}"
-                    )
+                    st.error(f"Agent 1 failed: {friendly_message}")
+                    st.caption(f"Model attempted: {model}")
 
+                    # Show exact API error for troubleshooting.
                     with st.expander("Technical error details"):
                         st.code(str(exc))
 
                 # ------------------------------------------
-                # AGENT 2: CONTENT CREATOR
+                # AGENT 2
                 # ------------------------------------------
                 if st.session_state.strategy:
                     content_prompt = f"""
 You are Agent 2, a marketing content creator.
-
-Use the strategy created by Agent 1.
 
 Product: {details["product"]}
 Audience: {details["audience"]}
@@ -657,13 +576,11 @@ Create:
 2. One 15-20 second video script.
 3. Two campaign headlines or taglines.
 4. One message for parents or guardians.
-5. A recommended channel for each content item.
+5. Recommend a channel for each item.
 
-Use concise wording and clear headings.
-Do not invent product features or unsupported claims.
-Do not guarantee sales or campaign results.
-Respect privacy and use age-appropriate language
-when children are part of the target audience.
+Use clear headings and concise wording.
+Do not invent product features or guarantee results.
+Respect privacy and use age-appropriate language.
 
 AGENT 1 STRATEGY:
 {st.session_state.strategy}
@@ -671,12 +588,10 @@ AGENT 1 STRATEGY:
 
                     try:
                         with st.spinner(
-                            "Agent 2 is creating content from the strategy..."
+                            "Agent 2 is creating campaign content..."
                         ):
                             content = generate_with_retry(
-                                client,
-                                content_prompt,
-                                model,
+                                client, content_prompt, model
                             )
 
                         st.session_state.content = content
@@ -685,15 +600,10 @@ AGENT 1 STRATEGY:
                         category, friendly_message = classify_error(exc)
                         st.session_state.last_error = str(exc)
 
-                        st.error(
-                            f"Agent 2 failed: {friendly_message}"
-                        )
+                        st.error(f"Agent 2 failed: {friendly_message}")
 
-                        st.info(
-                            "Your strategy is saved. Use "
-                            "'Retry Agent 2' below to try content "
-                            "generation again without rerunning Agent 1."
-                        )
+                        with st.expander("Technical error details"):
+                            st.code(str(exc))
 
                 if st.session_state.strategy:
                     st.session_state.campaign_report = build_report(
@@ -711,7 +621,7 @@ AGENT 1 STRATEGY:
 
 
 # ==================================================
-# RETRY AGENT 2 WITHOUT REGENERATING STRATEGY
+# RETRY AGENT 2 ONLY
 # ==================================================
 if (
     st.session_state.strategy
@@ -723,7 +633,7 @@ if (
         type="primary",
         use_container_width=True,
     ):
-        api_key = st.secrets.get("GEMINI_API_KEY", "")
+        api_key = st.secrets.get("GEMINI_API_KEY", "").strip()
 
         if not api_key:
             st.error("GEMINI_API_KEY is missing in Streamlit Secrets.")
@@ -736,11 +646,11 @@ if (
                 model = st.session_state.active_model
 
                 if not model:
-                    models = discover_models(client)
-                    if not models:
+                    available_models = discover_models(client)
+                    if not available_models:
                         st.error("No compatible Gemini model was found.")
                         st.stop()
-                    model = models[0]
+                    model = available_models[0]
 
                 content_prompt = f"""
 You are Agent 2, a marketing content creator.
@@ -755,12 +665,12 @@ Budget: USD {details["budget"]}
 Create:
 1. Three short social media posts.
 2. One 15-20 second video script.
-3. Two campaign headlines or taglines.
+3. Two campaign headlines.
 4. One message for parents or guardians.
-5. A recommended channel for each content item.
+5. A recommended channel for each item.
 
-Do not invent product features or guarantee results.
-Use appropriate language and respect child privacy.
+Do not invent features or guarantee results.
+Respect privacy and use age-appropriate language.
 
 AGENT 1 STRATEGY:
 {st.session_state.strategy}
@@ -768,9 +678,7 @@ AGENT 1 STRATEGY:
 
                 with st.spinner("Retrying Agent 2..."):
                     st.session_state.content = generate_with_retry(
-                        client,
-                        content_prompt,
-                        model,
+                        client, content_prompt, model
                     )
 
                 st.session_state.campaign_report = build_report(
@@ -797,17 +705,13 @@ if st.session_state.strategy:
     st.success("Marketing strategy generated successfully.")
 
     if st.session_state.active_model:
-        st.caption(
-            f"Gemini model used: {st.session_state.active_model}"
-        )
+        st.caption(f"Gemini model: {st.session_state.active_model}")
 
-    tab1, tab2, tab3 = st.tabs(
-        [
-            "Marketing Strategy",
-            "Content Creator",
-            "Download Report"
-        ]
-    )
+    tab1, tab2, tab3 = st.tabs([
+        "Marketing Strategy",
+        "Content Creator",
+        "Download Report"
+    ])
 
     with tab1:
         st.markdown(st.session_state.strategy)
@@ -818,7 +722,7 @@ if st.session_state.strategy:
         else:
             st.info(
                 "Content is not available yet. "
-                "Use the Retry Agent 2 button above."
+                "Use Retry Agent 2 above."
             )
 
     with tab3:
@@ -830,11 +734,6 @@ if st.session_state.strategy:
                 mime="text/markdown",
                 type="primary",
             )
-        else:
-            st.info(
-                "The report will be available after the strategy "
-                "has been generated."
-            )
 
 
 # ==================================================
@@ -843,28 +742,12 @@ if st.session_state.strategy:
 else:
     col1, col2, col3 = st.columns(3)
 
-    col1.metric(
-        "AI Agents",
-        "02",
-        "Strategy and content"
-    )
-
-    col2.metric(
-        "Workflow",
-        "Sequential",
-        "Agent 1 then Agent 2"
-    )
-
-    col3.metric(
-        "Sample Budget",
-        "$2,000",
-        "Fully editable"
-    )
+    col1.metric("AI Agents", "02", "Strategy and content")
+    col2.metric("Workflow", "Sequential", "Agent 1 then Agent 2")
+    col3.metric("Sample Budget", "$2,000", "Fully editable")
 
     st.markdown("## Campaign Workflow")
-    st.caption(
-        "From campaign brief to strategy and marketing content."
-    )
+    st.caption("From campaign brief to strategy and marketing content.")
 
     c1, c2, c3 = st.columns(3, gap="medium")
 
@@ -873,10 +756,7 @@ else:
         <div class="workflow-card">
             <div class="workflow-number">01</div>
             <h4>Define the Brief</h4>
-            <p>
-                Enter the product, target audience, budget,
-                market and campaign objective.
-            </p>
+            <p>Enter product, audience, budget, market and objective.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -885,10 +765,7 @@ else:
         <div class="workflow-card">
             <div class="workflow-number">02</div>
             <h4>Generate with AI</h4>
-            <p>
-                The strategist builds the plan. The content
-                creator uses that plan to create campaign content.
-            </p>
+            <p>The strategist builds the plan; the content creator uses it.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -897,10 +774,7 @@ else:
         <div class="workflow-card">
             <div class="workflow-number">03</div>
             <h4>Review and Export</h4>
-            <p>
-                Review the strategy, inspect content and
-                download the campaign report.
-            </p>
+            <p>Review the strategy and content, then download the report.</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -914,8 +788,4 @@ else:
 # FOOTER
 # ==================================================
 st.divider()
-
-st.caption(
-    "AI MARKETING STRATEGY STUDIO | "
-    "STREAMLIT + GOOGLE GEMINI"
-)
+st.caption("AI MARKETING STRATEGY STUDIO | STREAMLIT + GOOGLE GEMINI")
