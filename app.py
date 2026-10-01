@@ -118,7 +118,8 @@ div[data-baseweb="select"] > div {
     color: #8796b2 !important;
 }
 
-.stButton button[kind="primary"] {
+.stButton button[kind="primary"],
+.stFormSubmitButton button[kind="primary"] {
     background: linear-gradient(100deg, #7c3aed, #6366f1);
     color: #ffffff;
     border: 1px solid #8b78ef;
@@ -127,7 +128,8 @@ div[data-baseweb="select"] > div {
     min-height: 44px;
 }
 
-.stButton button[kind="primary"]:hover {
+.stButton button[kind="primary"]:hover,
+.stFormSubmitButton button[kind="primary"]:hover {
     background: linear-gradient(100deg, #6d28d9, #4f46e5);
     border-color: #c4b5fd;
 }
@@ -211,58 +213,226 @@ hr {
 
 
 # ==================================================
-# GEMINI SETTINGS
+# GEMINI CONFIGURATION
 # ==================================================
-MODEL_NAME = "gemini-3.8-flash"
 MAX_ATTEMPTS = 2
+REQUEST_TIMEOUT_MS = 60000
+
+# Optional: set GEMINI_MODEL in Streamlit Secrets
+# to a model name confirmed by the model diagnostic.
+# Otherwise, the app discovers compatible models.
+PREFERRED_MODEL = st.secrets.get("GEMINI_MODEL", "")
 
 
-def generate_with_retry(client, prompt):
-    """Generate content with retry for temporary errors."""
+# ==================================================
+# SESSION STATE
+# ==================================================
+DEFAULT_STATE = {
+    "strategy": "",
+    "content": "",
+    "campaign_report": "",
+    "campaign_details": {},
+    "active_model": "",
+    "last_error": "",
+}
+
+for key, default in DEFAULT_STATE.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+
+# ==================================================
+# GEMINI CLIENT
+# ==================================================
+@st.cache_resource(show_spinner=False)
+def get_gemini_client(api_key):
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            timeout=REQUEST_TIMEOUT_MS
+        ),
+    )
+
+
+# ==================================================
+# MODEL DISCOVERY
+# ==================================================
+def discover_models(client):
+    """
+    Find models that advertise generateContent.
+    Prefer Flash models, but do not invent model IDs.
+    """
+    models = []
+
+    try:
+        for item in client.models.list():
+            name = getattr(item, "name", "") or ""
+            actions = (
+                getattr(item, "supported_actions", None) or []
+            )
+
+            if (
+                name
+                and "generateContent" in actions
+                and "embedding" not in name.lower()
+            ):
+                # API model names can be returned as models/...
+                model_id = name.removeprefix("models/")
+                models.append(model_id)
+
+    except Exception as exc:
+        st.warning(
+            "Could not list available models. "
+            "Check the API key and Google API availability. "
+            f"Details: {exc}"
+        )
+
+    # Prefer Flash models to keep requests relatively lightweight.
+    models.sort(
+        key=lambda name: (
+            "flash" not in name.lower(),
+            name.lower()
+        )
+    )
+
+    if PREFERRED_MODEL:
+        preferred = PREFERRED_MODEL.removeprefix("models/")
+        if preferred in models:
+            models.remove(preferred)
+        models.insert(0, preferred)
+
+    return models
+
+
+# ==================================================
+# ERROR CLASSIFICATION
+# ==================================================
+def classify_error(exc):
+    message = str(exc)
+    upper = message.upper()
+
+    if any(x in upper for x in [
+        "429", "RESOURCE_EXHAUSTED", "QUOTA",
+        "RATE LIMIT"
+    ]):
+        return (
+            "quota",
+            "Gemini Free Tier quota or rate limit reached. "
+            "Check your API usage and retry after the reset."
+        )
+
+    if any(x in upper for x in [
+        "503", "UNAVAILABLE", "SERVICE UNAVAILABLE"
+    ]):
+        return (
+            "overloaded",
+            "Gemini is temporarily overloaded. "
+            "Wait a little and try again."
+        )
+
+    if any(x in upper for x in [
+        "504", "DEADLINE_EXCEEDED", "TIMED OUT",
+        "TIMEOUT"
+    ]):
+        return (
+            "timeout",
+            "Gemini took too long to respond. "
+            "Try again later or use a shorter prompt."
+        )
+
+    if any(x in upper for x in [
+        "404", "NOT_FOUND", "MODEL NOT FOUND"
+    ]):
+        return (
+            "model",
+            "The selected model is unavailable. "
+            "Check the exact model name for your API key."
+        )
+
+    if any(x in upper for x in [
+        "401", "403", "PERMISSION_DENIED",
+        "UNAUTHENTICATED", "API KEY"
+    ]):
+        return (
+            "auth",
+            "Check GEMINI_API_KEY in Streamlit Cloud Secrets "
+            "and confirm that the key is valid."
+        )
+
+    return "other", message
+
+
+# ==================================================
+# GENERATE CONTENT WITH LIMITED RETRY
+# ==================================================
+def generate_with_retry(client, prompt, model):
+    """
+    Retry temporary failures only.
+    Do not repeatedly retry quota or authentication errors.
+    """
+    last_exception = None
 
     for attempt in range(MAX_ATTEMPTS):
         try:
             response = client.models.generate_content(
-                model=MODEL_NAME,
+                model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.5,
-                    max_output_tokens=1800
-                )
+                    max_output_tokens=1200,
+                ),
             )
 
             if not response.text:
                 raise RuntimeError(
-                    "Gemini returned an empty response. Please retry."
+                    "Gemini returned an empty response."
                 )
 
             return response.text
 
         except Exception as exc:
-            error_text = str(exc).upper()
+            last_exception = exc
+            category, _ = classify_error(exc)
 
-            temporary_error = any(
-                code in error_text
-                for code in [
-                    "503",
-                    "UNAVAILABLE",
-                    "429",
-                    "RESOURCE_EXHAUSTED",
-                    "500",
-                    "502",
-                    "504",
-                    "DEADLINE_EXCEEDED",
-                    "INTERNAL"
-                ]
-            )
+            retryable = category in {
+                "overloaded", "timeout"
+            }
 
-            if not temporary_error or attempt == MAX_ATTEMPTS - 1:
+            if not retryable or attempt == MAX_ATTEMPTS - 1:
                 raise
 
-            # Wait before the final retry.
-            time.sleep(4)
+            # Short backoff: one retry only.
+            time.sleep(3 * (attempt + 1))
 
-    raise RuntimeError("Unable to generate a response.")
+    raise RuntimeError(
+        "Generation failed."
+    ) from last_exception
+
+
+# ==================================================
+# REPORT BUILDER
+# ==================================================
+def build_report(details, strategy, content):
+    return f"""# AI Marketing Campaign Report
+
+## Campaign Details
+
+- Product: {details["product"]}
+- Target audience: {details["audience"]}
+- Budget: USD {details["budget"]}
+- Market: {details["market"]}
+- Campaign goal: {details["goal"]}
+- Content tone: {details["tone"]}
+- Model: {details.get("model", "Not recorded")}
+
+## Agent 1: Marketing Strategy
+
+{strategy}
+
+## Agent 2: Marketing Content
+
+{content or "Content generation was not completed."}
+"""
 
 
 # ==================================================
@@ -352,25 +522,13 @@ with st.sidebar:
 
 
 # ==================================================
-# SESSION STATE
-# ==================================================
-if "strategy" not in st.session_state:
-    st.session_state.strategy = ""
-
-if "content" not in st.session_state:
-    st.session_state.content = ""
-
-if "campaign_report" not in st.session_state:
-    st.session_state.campaign_report = ""
-
-
-# ==================================================
 # GENERATE CAMPAIGN
 # ==================================================
 if generate_button:
-
     if not product.strip() or not audience.strip():
-        st.error("Please enter the product and target audience.")
+        st.error(
+            "Please enter the product and target audience."
+        )
 
     else:
         api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -378,123 +536,121 @@ if generate_button:
         if not api_key:
             st.error(
                 "GEMINI_API_KEY is missing. Add it under "
-                "Streamlit Cloud Settings, then Secrets."
+                "Streamlit Cloud → App settings → Secrets."
             )
 
         else:
-            client = genai.Client(
-                api_key=api_key,
-                http_options=types.HttpOptions(
-                    timeout=90000
-                )
-            )
+            # Save campaign details so the report and retry
+            # buttons can use the same inputs.
+            details = {
+                "product": product.strip(),
+                "audience": audience.strip(),
+                "budget": int(budget),
+                "market": market.strip(),
+                "goal": goal,
+                "tone": tone,
+                "extra": extra.strip(),
+            }
 
-            # ------------------------------------------
-            # AGENT 1: MARKETING STRATEGIST
-            # ------------------------------------------
-            strategy_prompt = f"""
+            st.session_state.campaign_details = details
+            st.session_state.strategy = ""
+            st.session_state.content = ""
+            st.session_state.campaign_report = ""
+            st.session_state.last_error = ""
+
+            try:
+                client = get_gemini_client(api_key)
+
+                with st.spinner(
+                    "Checking available Gemini models..."
+                ):
+                    available_models = discover_models(client)
+
+                if not available_models:
+                    st.error(
+                        "No compatible model was found. "
+                        "Check the model list in Google AI Studio "
+                        "and verify that your API key has access."
+                    )
+                    st.stop()
+
+                # Try available models in order. If a model
+                # returns 503/504, do not cycle through many
+                # models and exhaust the Free Tier quota.
+                model = available_models[0]
+                st.session_state.active_model = model
+                details["model"] = model
+
+                # ------------------------------------------
+                # AGENT 1: MARKETING STRATEGIST
+                # ------------------------------------------
+                strategy_prompt = f"""
 You are Agent 1, a marketing strategist.
 
 Create a concise, practical marketing strategy.
 
-Product: {product}
-Target audience: {audience}
-Budget: USD {budget}
-Market: {market}
-Campaign goal: {goal}
-Content tone: {tone}
-Extra details: {extra or "None"}
+Product: {details["product"]}
+Target audience: {details["audience"]}
+Budget: USD {details["budget"]}
+Market: {details["market"]}
+Campaign goal: {details["goal"]}
+Content tone: {details["tone"]}
+Extra details: {details["extra"] or "None"}
 
 Include:
 1. Campaign objective and audience insight.
 2. Four marketing channels with reasons.
-3. Budget allocation totaling exactly USD {budget}.
+3. Budget allocation totaling exactly USD {details["budget"]}.
 4. A four-week campaign timeline.
 5. Five measurable KPIs.
 6. Three risks and practical solutions.
 
 Use clear headings and Markdown tables.
-Keep the response under 600 words.
+Keep the response concise, under 500 words.
 Do not guarantee campaign results.
 Do not invent product features.
 If children are in the audience, consider child privacy
 and use age-appropriate, non-manipulative marketing.
 """
 
-            st.session_state.strategy = ""
-            st.session_state.content = ""
-            st.session_state.campaign_report = ""
-
-            with st.spinner(
-                "Agent 1 is developing the marketing strategy..."
-            ):
                 try:
-                    strategy = generate_with_retry(
-                        client,
-                        strategy_prompt
-                    )
+                    with st.spinner(
+                        "Agent 1 is developing the marketing strategy..."
+                    ):
+                        strategy = generate_with_retry(
+                            client,
+                            strategy_prompt,
+                            model,
+                        )
 
                     st.session_state.strategy = strategy
 
                 except Exception as exc:
+                    category, friendly_message = classify_error(exc)
+                    st.session_state.last_error = str(exc)
+
                     st.error(
-                        "Strategy generation failed: "
-                        + str(exc)
+                        f"Agent 1 failed: {friendly_message}"
                     )
 
-                    error_text = str(exc).upper()
+                    with st.expander("Technical error details"):
+                        st.code(str(exc))
 
-                    if "503" in error_text or "UNAVAILABLE" in error_text:
-                        st.warning(
-                            "Gemini is temporarily overloaded. "
-                            "Wait a little and try again."
-                        )
-
-                    elif (
-                        "429" in error_text
-                        or "RESOURCE_EXHAUSTED" in error_text
-                    ):
-                        st.warning(
-                            "The Gemini API rate limit or quota "
-                            "has been reached. Check your API usage."
-                        )
-
-                    elif (
-                        "404" in error_text
-                        or "NOT_FOUND" in error_text
-                    ):
-                        st.warning(
-                            "This model may not be available to your "
-                            "API key. Check the model IDs available "
-                            "in Google AI Studio."
-                        )
-
-                    elif (
-                        "504" in error_text
-                        or "DEADLINE_EXCEEDED" in error_text
-                    ):
-                        st.warning(
-                            "Gemini took too long to respond. "
-                            "Try again later or check model availability."
-                        )
-
-            # ------------------------------------------
-            # AGENT 2: CONTENT CREATOR
-            # Runs only after Agent 1 succeeds.
-            # ------------------------------------------
-            if st.session_state.strategy:
-
-                content_prompt = f"""
+                # ------------------------------------------
+                # AGENT 2: CONTENT CREATOR
+                # ------------------------------------------
+                if st.session_state.strategy:
+                    content_prompt = f"""
 You are Agent 2, a marketing content creator.
 
-Use the strategy created by Agent 1 below.
+Use the strategy created by Agent 1.
 
-Product: {product}
-Audience: {audience}
-Market: {market}
-Goal: {goal}
-Tone: {tone}
-Budget: USD {budget}
+Product: {details["product"]}
+Audience: {details["audience"]}
+Market: {details["market"]}
+Goal: {details["goal"]}
+Tone: {details["tone"]}
+Budget: USD {details["budget"]}
 
 Create:
 1. Three short social media posts.
@@ -503,7 +659,7 @@ Create:
 4. One message for parents or guardians.
 5. A recommended channel for each content item.
 
-Use clear headings and concise wording.
+Use concise wording and clear headings.
 Do not invent product features or unsupported claims.
 Do not guarantee sales or campaign results.
 Respect privacy and use age-appropriate language
@@ -513,63 +669,137 @@ AGENT 1 STRATEGY:
 {st.session_state.strategy}
 """
 
-                with st.spinner(
-                    "Agent 2 is creating content from the strategy..."
-                ):
                     try:
-                        content = generate_with_retry(
-                            client,
-                            content_prompt
-                        )
+                        with st.spinner(
+                            "Agent 2 is creating content from the strategy..."
+                        ):
+                            content = generate_with_retry(
+                                client,
+                                content_prompt,
+                                model,
+                            )
 
                         st.session_state.content = content
 
                     except Exception as exc:
+                        category, friendly_message = classify_error(exc)
+                        st.session_state.last_error = str(exc)
+
                         st.error(
-                            "Content generation failed: "
-                            + str(exc)
+                            f"Agent 2 failed: {friendly_message}"
                         )
 
                         st.info(
-                            "The strategy was generated successfully. "
-                            "You can retry content generation later."
+                            "Your strategy is saved. Use "
+                            "'Retry Agent 2' below to try content "
+                            "generation again without rerunning Agent 1."
                         )
 
-            # ------------------------------------------
-            # BUILD REPORT
-            # ------------------------------------------
-            if (
-                st.session_state.strategy
-                and st.session_state.content
-            ):
-                st.session_state.campaign_report = f"""
-# AI Marketing Campaign Report
+                if st.session_state.strategy:
+                    st.session_state.campaign_report = build_report(
+                        details,
+                        st.session_state.strategy,
+                        st.session_state.content,
+                    )
 
-## Campaign Details
+            except Exception as exc:
+                category, friendly_message = classify_error(exc)
+                st.error(friendly_message)
 
-- Product: {product}
-- Target audience: {audience}
-- Budget: USD {budget}
-- Market: {market}
-- Campaign goal: {goal}
-- Content tone: {tone}
+                with st.expander("Technical error details"):
+                    st.code(str(exc))
 
-## Agent 1: Marketing Strategy
 
+# ==================================================
+# RETRY AGENT 2 WITHOUT REGENERATING STRATEGY
+# ==================================================
+if (
+    st.session_state.strategy
+    and not st.session_state.content
+    and st.session_state.campaign_details
+):
+    if st.button(
+        "Retry Agent 2 — Generate Content",
+        type="primary",
+        use_container_width=True,
+    ):
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
+
+        if not api_key:
+            st.error("GEMINI_API_KEY is missing in Streamlit Secrets.")
+
+        else:
+            details = st.session_state.campaign_details
+
+            try:
+                client = get_gemini_client(api_key)
+                model = st.session_state.active_model
+
+                if not model:
+                    models = discover_models(client)
+                    if not models:
+                        st.error("No compatible Gemini model was found.")
+                        st.stop()
+                    model = models[0]
+
+                content_prompt = f"""
+You are Agent 2, a marketing content creator.
+
+Product: {details["product"]}
+Audience: {details["audience"]}
+Market: {details["market"]}
+Goal: {details["goal"]}
+Tone: {details["tone"]}
+Budget: USD {details["budget"]}
+
+Create:
+1. Three short social media posts.
+2. One 15-20 second video script.
+3. Two campaign headlines or taglines.
+4. One message for parents or guardians.
+5. A recommended channel for each content item.
+
+Do not invent product features or guarantee results.
+Use appropriate language and respect child privacy.
+
+AGENT 1 STRATEGY:
 {st.session_state.strategy}
-
-## Agent 2: Marketing Content
-
-{st.session_state.content}
 """
+
+                with st.spinner("Retrying Agent 2..."):
+                    st.session_state.content = generate_with_retry(
+                        client,
+                        content_prompt,
+                        model,
+                    )
+
+                st.session_state.campaign_report = build_report(
+                    details,
+                    st.session_state.strategy,
+                    st.session_state.content,
+                )
+
+                st.success("Agent 2 completed successfully.")
+                st.rerun()
+
+            except Exception as exc:
+                category, friendly_message = classify_error(exc)
+                st.error(friendly_message)
+
+                with st.expander("Technical error details"):
+                    st.code(str(exc))
 
 
 # ==================================================
 # RESULTS
 # ==================================================
 if st.session_state.strategy:
-
     st.success("Marketing strategy generated successfully.")
+
+    if st.session_state.active_model:
+        st.caption(
+            f"Gemini model used: {st.session_state.active_model}"
+        )
 
     tab1, tab2, tab3 = st.tabs(
         [
@@ -588,7 +818,7 @@ if st.session_state.strategy:
         else:
             st.info(
                 "Content is not available yet. "
-                "Try generating the campaign again."
+                "Use the Retry Agent 2 button above."
             )
 
     with tab3:
@@ -598,12 +828,12 @@ if st.session_state.strategy:
                 data=st.session_state.campaign_report,
                 file_name="ai_marketing_campaign.md",
                 mime="text/markdown",
-                type="primary"
+                type="primary",
             )
         else:
             st.info(
-                "The report will be available after both agents "
-                "finish successfully."
+                "The report will be available after the strategy "
+                "has been generated."
             )
 
 
@@ -611,7 +841,6 @@ if st.session_state.strategy:
 # HOME DASHBOARD
 # ==================================================
 else:
-
     col1, col2, col3 = st.columns(3)
 
     col1.metric(
@@ -633,7 +862,6 @@ else:
     )
 
     st.markdown("## Campaign Workflow")
-
     st.caption(
         "From campaign brief to strategy and marketing content."
     )
@@ -659,7 +887,7 @@ else:
             <h4>Generate with AI</h4>
             <p>
                 The strategist builds the plan. The content
-                creator then uses that plan to create content.
+                creator uses that plan to create campaign content.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -677,9 +905,8 @@ else:
         """, unsafe_allow_html=True)
 
     st.info(
-        "Start by entering your campaign details in the sidebar "
-        "and clicking Generate Campaign. AI outputs should be "
-        "reviewed before use."
+        "Enter your campaign details in the sidebar and click "
+        "Generate Campaign. Review AI outputs before using them."
     )
 
 
