@@ -143,7 +143,7 @@ if run:
         st.stop()
 
     client = genai.Client(api_key=api_key)
-    model = "gemini-2.5-flash"
+    model = "gemini-3.8-flash"
 
     strategy_prompt = f"""You are Agent 1, the Marketing Strategist, in a sequential AI workflow.
 Create a practical marketing plan from these details:
