@@ -165,18 +165,34 @@ if run:
 
     client = genai.Client(
     api_key=api_key,
-    http_options=types.HttpOptions(timeout=45000)
+    http_options=types.HttpOptions(timeout=90000)
 )
     model = "gemini-3.5-flash"
 
-    strategy_prompt = f"""You are Agent 1, the Marketing Strategist, in a sequential AI workflow.
-Create a practical marketing plan from these details:
+    strategy_prompt = f"""
+Create a practical marketing strategy.
+
 Product: {product}
 Target audience: {audience}
 Budget: USD {budget}
 Market: {market}
-Campaign goal: {goal}
-Extra details: {extra or 'Not provided'}
+Goal: {goal}
+Tone: {tone}
+Extra details: {extra or 'None'}
+
+Include:
+1. Campaign objective
+2. Four marketing channels
+3. Budget allocation totaling exactly ${budget}
+4. Four-week timeline
+5. Five measurable KPIs
+6. Three risks and solutions
+
+Use concise bullet points and Markdown tables.
+Avoid unsupported claims and guaranteed results.
+Consider child privacy if the audience includes minors.
+Keep the response under 700 words.
+"""
 
 Include: (1) campaign objective and audience insight, (2) 3–5 marketing channels with reasons,
 (3) a budget allocation that adds up exactly to USD {budget}, (4) a four-week timeline,
