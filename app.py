@@ -1,9 +1,10 @@
 import streamlit as st
 from google import genai
+from google.genai import types
 import time
 
 
-def generate_with_retry(client, model, prompt, max_attempts=3):
+def generate_with_retry(client, model, prompt, max_attempts=2):
     """Retry temporary Gemini overload/rate-limit errors with backoff."""
     last_error = None
     for attempt in range(max_attempts):
@@ -162,7 +163,10 @@ if run:
         st.warning("Please enter both a product and target audience.")
         st.stop()
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+    api_key=api_key,
+    http_options=types.HttpOptions(timeout=45000)
+)
     model = "gemini-3.5-flash"
 
     strategy_prompt = f"""You are Agent 1, the Marketing Strategist, in a sequential AI workflow.
